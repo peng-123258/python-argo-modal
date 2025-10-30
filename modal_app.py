@@ -25,7 +25,7 @@ image = modal.Image.debian_slim().pip_install("fastapi", "uvicorn", "requests").
 )
 
 # --- 3. 定义 Modal App 和共享资源 ---
-app = modal.App(MODAL_APP_NAME, image=image, region=DEPLOY_REGION)  # 关键修改：指定地区
+app = modal.App(MODAL_APP_NAME, image=image)  # 关键修改：指定地区
 app_secrets = modal.Secret.from_name("modal-secrets")
 subscription_dict = modal.Dict.from_name("modal-dict-data", create_if_missing=True)
 
@@ -275,6 +275,7 @@ fastapi_app = FastAPI(lifespan=lifespan)
     secrets=[app_secrets],
     timeout=86400,
     keep_warm=1,
+    region=DEPLOY_REGION  # 在此处指定部署地区
 )
 @modal.asgi_app()
 def web_server():
@@ -296,5 +297,6 @@ def web_server():
             return Response(content=f"读取订阅时发生错误: {e}", status_code=500, media_type="text/plain; charset=utf-8")
     
     return fastapi_app
+
 
 
