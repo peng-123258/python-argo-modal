@@ -25,7 +25,8 @@ image = modal.Image.debian_slim().pip_install("fastapi", "uvicorn", "requests").
 
 # --- 3. 定义 Modal App 和共享资源（YSL实例专属） ---
 app = modal.App(MODAL_APP_NAME, image=image)
-app_secrets = modal.Secret.from_name("modal-secrets-ysl")  # YSL专属密钥
+# 修正：Secret名称需与实际创建的一致，假设为"ysl-secrets"（全大写+下划线更规范）
+app_secrets = modal.Secret.from_name("YSL-SECRETS")
 subscription_dict = modal.Dict.from_name("modal-dict-data-ysl", create_if_missing=True)  # 独立存储
 
 # --- 4. 辅助函数（带YSL标识） ---
@@ -46,7 +47,7 @@ async def lifespan(app_instance: FastAPI):
     # --- 应用启动时 ---
     print("▶️ YSL实例 - Lifespan startup: 正在启动后台服务...")
     
-    # 核心修改：所有TO替换为YSL
+    # 核心修改：所有配置变量与Secret对应
     UUID = os.environ.get('YSL_UUID') or 'ysl-be16536e-5c3c-44bc-8cb7-b7d0ddc3d951'
     YSL_ARGO_DOMAIN = os.environ.get('YSL_ARGO_DOMAIN') or ''  # YSL专属Argo域名
     YSL_ARGO_AUTH = os.environ.get('YSL_ARGO_AUTH') or ''      # YSL专属Argo认证
@@ -210,7 +211,8 @@ fastapi_app = FastAPI(lifespan=lifespan)
 @app.function(
     secrets=[app_secrets],
     timeout=86400,
-    keep_warm=1,
+    # 修正：Modal 1.0+ 中 keep_warm 已更名为 min_containers
+    min_containers=1,
     region=DEPLOY_REGION,
     cpu=0.125,
     memory=128
