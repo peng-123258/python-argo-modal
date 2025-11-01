@@ -19,16 +19,15 @@ INSTANCE_CONFIGS = [
 
 COMMON_PORT = 8001
 SUB_PATH = "sub"
-UUID = os.environ.get("COMMON_UUID") or "be16536e-5c3c-44bc-8cb7-b7d0ddc3d951"
+UUID = os.environ.get("COMMON_UUID") or "be16536e-5c3c-44bc-8cb7-b7d0ddc3d951"  # 优先从Secret读取
 NAME_PREFIX = "proxy-node"
-CFIP = os.environ.get("COMMON_CFIP") or "www.visa.com.tw"
-CFPORT = int(os.environ.get("COMMON_CFPORT") or 443)
+CFIP = os.environ.get("COMMON_CFIP") or "www.visa.com.tw"  # 优先从Secret读取
+CFPORT = int(os.environ.get("COMMON_CFPORT") or 443)  # 优先从Secret读取
 MODAL_USER_NAME = os.environ.get('MODAL_USER_NAME') or ""
 
 # --------------------------
 # 全局存储与应用（每个实例独立）
 # --------------------------
-# 为每个实例创建全局存储和应用
 stores = {}  # {app_name: sub_store}
 apps = {}    # {app_name: modal.App}
 
@@ -80,6 +79,7 @@ def get_fastapi_app(app_name, prefix):
     # 全局生命周期（通过闭包传递app_name和prefix）
     @asynccontextmanager
     async def lifespan(fastapi_app: FastAPI):
+        # 从Secret读取地区配置（实例专属）
         region = os.environ.get(f"{prefix}_REGION") or next(
             cfg["default_region"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == prefix
         )
@@ -93,7 +93,7 @@ def get_fastapi_app(app_name, prefix):
                 "port": COMMON_PORT,
                 "protocol": "vless",
                 "settings": {
-                    "clients": [{"id": UUID}],
+                    "clients": [{"id": UUID}],  # UUID从Secret读取
                     "decryption": "none",
                     "fallbacks": [
                         {"dest": 3001},
@@ -140,10 +140,10 @@ def get_fastapi_app(app_name, prefix):
         # 启动核心服务
         subprocess.Popen(["/root/.tmp/web", "-c", config_path])
         
-        # 启动Argo隧道
+        # 启动Argo隧道（从Secret读取实例专属隧道配置）
         domain_for_links = ""
-        argo_domain = os.environ.get(f"{prefix}_ARGO_DOMAIN") or ""
-        argo_auth = os.environ.get(f"{prefix}_ARGO_AUTH") or ""
+        argo_domain = os.environ.get(f"{prefix}_ARGO_DOMAIN") or ""  # 从Secret读取
+        argo_auth = os.environ.get(f"{prefix}_ARGO_AUTH") or ""      # 从Secret读取
         argo_log = f"/root/.tmp/argo_{app_name}.log"
         if argo_domain and argo_auth:
             domain_for_links = argo_domain
@@ -175,7 +175,7 @@ def get_fastapi_app(app_name, prefix):
             except:
                 raise RuntimeError(f"{app_name} 隧道启动失败")
         
-        # 生成订阅
+        # 生成订阅（使用从Secret读取的UUID、CFIP等参数）
         links = generate_links(domain_for_links, app_name, UUID, CFIP, CFPORT)
         stores[app_name]["content"] = base64.b64encode(links.encode()).decode()
         print(f"✅ {app_name} 订阅内容已生成")
@@ -225,28 +225,28 @@ def get_fastapi_app(app_name, prefix):
     return app
 
 # --------------------------
-# 全局暴露每个实例的服务（关键）
+# 全局暴露每个实例的服务（绑定实例专属Secret）
 # --------------------------
 for cfg in INSTANCE_CONFIGS:
     prefix = cfg["prefix"]
     app_name = os.environ.get(f"{prefix}_APP_NAME") or f"{NAME_PREFIX}-{prefix.lower()}"
     region = os.environ.get(f"{prefix}_REGION") or cfg["default_region"]
+    secret_name = f"{prefix}-secrets"  # 实例专属Secret名称（与YAML中一致）
     
-    # 为每个实例定义全局web_server函数（无嵌套）
+    # 绑定Secret：每个实例引用自己的Secret
     @apps[app_name].function(
         timeout=86400,
-        min_containers=1,  # 替换keep_warm
+        min_containers=1,
         region=region,
         cpu=0.125,
-        memory=128
+        memory=128,
+        secrets=[modal.Secret.from_name(secret_name)]  # 关键：引用实例专属Secret
     )
     @modal.asgi_app()
     def web_server():
-        # 通过闭包获取当前实例的app_name和prefix
         return get_fastapi_app(app_name, prefix)
 
 # --------------------------
 # 实例变量（用于部署）
-to_app = apps[next(cfg["prefix"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "TO")]
-ysl_app = apps[next(cfg["prefix"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "YSL")]
-ny_app = apps[next(cfg["prefix"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "NY")]
+# --------------------------
+to_app = apps[f"{NAME_PREFIX}-to"]  # 直接使用固定名
