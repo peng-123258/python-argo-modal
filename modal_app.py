@@ -248,5 +248,13 @@ for cfg in INSTANCE_CONFIGS:
 
 # --------------------------
 # 实例变量（用于部署）
-# --------------------------
-to_app = apps[f"{NAME_PREFIX}-to"]  # 直接使用固定名
+# 新增：定义全局主应用（解决Modal找不到app的问题）
+ # --------------------------
+ main_app = modal.App("multi-region-proxy-main")
+ # 将所有实例的web_server函数添加到主应用
+ for cfg in INSTANCE_CONFIGS:
+     prefix = cfg["prefix"]
+     app_name = os.environ.get(f"{prefix}_APP_NAME") or f"{NAME_PREFIX}-{prefix.lower()}"
+     main_app.add_function(apps[app_name].functions["web_server"])
+ # 暴露全局app变量，供Modal部署时识别
+ app = main_app
