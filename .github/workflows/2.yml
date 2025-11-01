@@ -1,0 +1,86 @@
+name: Deploy YSL App to Modal
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '10 18 * * *'
+  repository_dispatch:
+    types: [service-down-alert]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      MODAL_USER_NAME: ${{ secrets-lODAL_USER_NAME }}
+      # 明确 YSL 实例的应用名称
+      MODAL_APP_NAME: ${{ secrets.MODAL_APP_NAME || 'ysl-app' }}
+      SUB_PATH: ${{ secrets.SUB_PATH || 'ysl-sub' }}  # 默认为 YSL 专属路径
+      SERVER_PORT: ${{ secrets.SERVER_PORT || '3000' }}
+      
+    steps:
+      - name: Check Trigger Event
+        run: |
+          echo "Workflow triggered by: ${{ github.event_name }}"
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "触发事件类型 (Event Type): ${{ github.event.action }}"
+            echo "收到来自 Uptime Kuma 的下线通知，开始执行 YSL 实例自动恢复部署..."
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "工作流被手动触发，开始部署 YSL 实例..."
+          else
+            echo "工作流由计划任务触发，开始部署 YSL 实例..."
+          fi
+          
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install modal fastapi requests
+
+      - name: Authenticate Modal
+        run: |
+          modal token set --token-id ${{ secrets.MODAL_TOKEN_ID }} --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Stop Existing YSL App (for clean deploy)
+        run: |
+          # 停止 YSL 实例的旧版本
+          modal app stop ${{ env.MODAL_APP_NAME }} || true
+
+      - name: Create or Update YSL Secret
+        run: |
+          # 删除旧的 YSL 专属 Secret（如有）
+          modal secret delete YSL-SECRETS --yes || true
+          
+          # 创建 YSL 专属 Secret（名称与代码中一致）
+          modal secret create YSL-SECRETS \
+          UUID='${{ secrets.UUID || '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9' }}' \  # YSL 专属默认 UUID
+          MODAL_USER_NAME='${{ secrets.MODAL_USER_NAME }}' \
+          YSL_ARGO_DOMAIN='${{ secrets.YSL_ARGO_DOMAIN }}' \  # 与代码中变量名一致
+          YSL_ARGO_AUTH='${{ secrets.YSL_ARGO_AUTH }}' \
+          ARGO_PORT='${{ secrets.ARGO_PORT || '8003' }}' \  # YSL 专属端口（与其他实例区分）
+          SUB_PATH='${{ secrets.SUB_PATH || 'ysl-sub' }}' \
+          NAME='${{ secrets.NAME || 'YslModal' }}' \  # YSL 专属名称
+          CFIP='${{ secrets.CFIP || 'ysl.visa.com.tw' }}' \  # YSL 专属 CFIP
+          CFPORT='${{ secrets.CFPORT || '443' }}' \
+          NEZHA_SERVER='${{ secrets.NEZHA_SERVER }}' \
+          NEZHA_KEY='${{ secrets.NEZHA_KEY }}' \
+          NEZHA_PORT='${{ secrets.NEZHA_PORT }}' \
+          UPLOAD_URL='${{ secrets.UPLOAD_URL }}' \
+          PROJECT_URL='${{ secrets.PROJECT_URL }}' \
+          BOT_TOKEN='${{ secrets.BOT_TOKEN }}' \
+          CHAT_ID='${{ secrets.CHAT_ID }}'
+
+      - name: Deploy YSL App to Modal
+        run: modal deploy ysl_app.py  # 部署 YSL 专属代码
+
+      - name: Output YSL Deployment URLs
+        run: |
+          echo "✅ YSL 实例部署成功!"
+          echo "--------------------------------------------------"
+          echo "YSL 项目 URL: https://${{ env.MODAL_USER_NAME }}--${{ env.MODAL_APP_NAME }}-web_server.modal.run"
+          echo "YSL 订阅 URL: https://${{ env.MODAL_USER_NAME }}--${{ env.MODAL_APP_NAME }}-web_server.modal.run/${{ env.SUB_PATH }}"
+          echo "--------------------------------------------------"
