@@ -1,0 +1,109 @@
+name: Deploy Modal Apps
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '8 18 * * *'
+  repository_dispatch:
+    types: [service-down-alert]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install modal fastapi requests
+
+      - name: Authenticate Modal
+        run: |
+          modal token set --token-id ${{ secrets.MODAL_TOKEN_ID }} --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      # ────────────────────────────────
+      # TO_APP 部署
+      # ────────────────────────────────
+      - name: Stop to-app
+        run: modal app stop to-app || true
+
+      - name: Create Secret for to-app
+        run: |
+          modal secret delete modal-secrets-to --yes || true
+          modal secret create modal-secrets-to \
+            TO_UUID='${{ secrets.TO_UUID }}' \
+            TO_ARGO_DOMAIN='${{ secrets.TO_ARGO_DOMAIN }}' \
+            TO_ARGO_AUTH='${{ secrets.TO_ARGO_AUTH }}' \
+            TO_ARGO_PORT='${{ secrets.TO_ARGO_PORT }}' \
+            TO_NAME='${{ secrets.TO_NAME }}' \
+            TO_CFIP='${{ secrets.TO_CFIP }}' \
+            TO_CFPORT='${{ secrets.TO_CFPORT }}' \
+            TO_SUB_PATH='${{ secrets.TO_SUB_PATH }}' \
+            MODAL_USER_NAME='${{ secrets.MODAL_USER_NAME_TO }}'
+
+      - name: Deploy to_app.py
+        run: modal deploy to_app.py --name to-app
+
+      # ────────────────────────────────
+      # YSL_APP 部署
+      # ────────────────────────────────
+      - name: Stop ysl-app
+        run: modal app stop ysl-app || true
+
+      - name: Create Secret for ysl-app
+        run: |
+          modal secret delete modal-secrets-ysl --yes || true
+          modal secret create modal-secrets-ysl \
+            YSL_UUID='${{ secrets.YSL_UUID }}' \
+            YSL_ARGO_DOMAIN='${{ secrets.YSL_ARGO_DOMAIN }}' \
+            YSL_ARGO_AUTH='${{ secrets.YSL_ARGO_AUTH }}' \
+            YSL_ARGO_PORT='${{ secrets.YSL_ARGO_PORT }}' \
+            YSL_NAME='${{ secrets.YSL_NAME }}' \
+            YSL_CFIP='${{ secrets.YSL_CFIP }}' \
+            YSL_CFPORT='${{ secrets.YSL_CFPORT }}' \
+            YSL_SUB_PATH='${{ secrets.YSL_SUB_PATH }}' \
+            MODAL_USER_NAME='${{ secrets.MODAL_USER_NAME_YSL }}'
+
+      - name: Deploy ysl_app.py
+        run: modal deploy ysl_app.py --name ysl-app
+
+      # ────────────────────────────────
+      # NY_APP 部署
+      # ────────────────────────────────
+      - name: Stop ny-app
+        run: modal app stop ny-app || true
+
+      - name: Create Secret for ny-app
+        run: |
+          modal secret delete modal-secrets-ny --yes || true
+          modal secret create modal-secrets-ny \
+            NY_UUID='${{ secrets.NY_UUID }}' \
+            NY_ARGO_DOMAIN='${{ secrets.NY_ARGO_DOMAIN }}' \
+            NY_ARGO_AUTH='${{ secrets.NY_ARGO_AUTH }}' \
+            NY_ARGO_PORT='${{ secrets.NY_ARGO_PORT }}' \
+            NY_NAME='${{ secrets.NY_NAME }}' \
+            NY_CFIP='${{ secrets.NY_CFIP }}' \
+            NY_CFPORT='${{ secrets.NY_CFPORT }}' \
+            NY_SUB_PATH='${{ secrets.NY_SUB_PATH }}' \
+            MODAL_USER_NAME='${{ secrets.MODAL_USER_NAME_NY }}'
+
+      - name: Deploy ny_app.py
+        run: modal deploy ny_app.py --name ny-app
+
+      # ────────────────────────────────
+      # 输出部署结果
+      # ────────────────────────────────
+      - name: Output Deployment URLs
+        run: |
+          echo "✅ 所有应用部署成功!"
+          echo "--------------------------------------------------"
+          echo "TO App: https://${{ secrets.MODAL_USER_NAME_TO }}--to-app-web_server.modal.run/${{ secrets.TO_SUB_PATH }}"
+          echo "YSL App: https://${{ secrets.MODAL_USER_NAME_YSL }}--ysl-app-web_server.modal.run/${{ secrets.YSL_SUB_PATH }}"
+          echo "NY App: https://${{ secrets.MODAL_USER_NAME_NY }}--ny-app-web_server.modal.run/${{ secrets.NY_SUB_PATH }}"
+          echo "--------------------------------------------------"
