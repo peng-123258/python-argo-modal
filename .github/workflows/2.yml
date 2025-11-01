@@ -1,4 +1,4 @@
-name: Deploy to Modal
+name: Deploy to Modal2
 
 on:
   workflow_dispatch:
