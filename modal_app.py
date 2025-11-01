@@ -9,7 +9,7 @@ from fastapi import FastAPI, Response
 import modal
 
 # --------------------------
-# 全局配置（所有实例共享）
+# 全局配置
 # --------------------------
 INSTANCE_CONFIGS = [
     {"prefix": "TO", "default_region": "asia-northeast3"},
@@ -26,7 +26,27 @@ CFPORT = int(os.environ.get("COMMON_CFPORT") or 443)
 MODAL_USER_NAME = os.environ.get('MODAL_USER_NAME') or ""
 
 # --------------------------
-# 全局工具函数（避免嵌套）
+# 全局存储与应用（每个实例独立）
+# --------------------------
+# 为每个实例创建全局存储和应用
+stores = {}  # {app_name: sub_store}
+apps = {}    # {app_name: modal.App}
+
+for cfg in INSTANCE_CONFIGS:
+    prefix = cfg["prefix"]
+    app_name = os.environ.get(f"{prefix}_APP_NAME") or f"{NAME_PREFIX}-{prefix.lower()}"
+    # 全局存储
+    stores[app_name] = modal.Dict.from_name(f"sub-store-{app_name}", create_if_missing=True)
+    # 全局应用
+    base_image = modal.Image.debian_slim().pip_install("fastapi", "uvicorn").run_commands(
+        "apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*",
+        "mkdir -p /root/.tmp && curl -L https://amd64.ssss.nyc.mn/web -o /root/.tmp/web",
+        "curl -L https://amd64.ssss.nyc.mn/2go -o /root/.tmp/bot && chmod +x /root/.tmp/*"
+    )
+    apps[app_name] = modal.App(app_name, image=base_image)
+
+# --------------------------
+# 全局工具函数
 # --------------------------
 def generate_links(domain, name, uuid, cfip, cfport):
     try:
@@ -54,187 +74,180 @@ def generate_links(domain, name, uuid, cfip, cfport):
     )
 
 # --------------------------
-# 全局定义实例类（避免动态函数嵌套）
+# 为每个实例定义全局FastAPI和路由
 # --------------------------
-class Instance:
-    def __init__(self, cfg):
-        self.prefix = cfg["prefix"]
-        self.region = os.environ.get(f"{self.prefix}_REGION") or cfg["default_region"]
-        self.app_name = os.environ.get(f"{self.prefix}_APP_NAME") or f"{NAME_PREFIX}-{self.prefix.lower()}"
-        self.argo_domain = os.environ.get(f"{self.prefix}_ARGO_DOMAIN") or ""
-        self.argo_auth = os.environ.get(f"{self.prefix}_ARGO_AUTH") or ""
-        self.app = modal.App(self.app_name, image=self._build_image())
-        self.sub_store = modal.Dict.from_name(f"sub-store-{self.app_name}", create_if_missing=True)
-        self.fastapi_app = self._create_fastapi_app()
-
-    def _build_image(self):
-        return modal.Image.debian_slim().pip_install("fastapi", "uvicorn").run_commands(
-            "apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*",
-            "mkdir -p /root/.tmp && curl -L https://amd64.ssss.nyc.mn/web -o /root/.tmp/web",
-            "curl -L https://amd64.ssss.nyc.mn/2go -o /root/.tmp/bot && chmod +x /root/.tmp/*"
+def get_fastapi_app(app_name, prefix):
+    # 全局生命周期（通过闭包传递app_name和prefix）
+    @asynccontextmanager
+    async def lifespan(fastapi_app: FastAPI):
+        region = os.environ.get(f"{prefix}_REGION") or next(
+            cfg["default_region"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == prefix
         )
-
-    def _create_fastapi_app(self):
-        # 全局生命周期函数（绑定到实例）
-        @asynccontextmanager
-        async def lifespan(fastapi_app: FastAPI):
-            print(f"▶️ 启动实例: {self.app_name} (地区: {self.region}, 端口: {COMMON_PORT})")
-            
-            # 配置文件生成
-            config_path = f"/root/.tmp/config_{self.app_name}.json"
-            config_data = {
-                "log": {"access": "/dev/null", "error": "/dev/null", "loglevel": "none"},
-                "inbounds": [{
-                    "port": COMMON_PORT,
+        print(f"▶️ 启动实例: {app_name} (地区: {region}, 端口: {COMMON_PORT})")
+        
+        # 配置文件生成
+        config_path = f"/root/.tmp/config_{app_name}.json"
+        config_data = {
+            "log": {"access": "/dev/null", "error": "/dev/null", "loglevel": "none"},
+            "inbounds": [{
+                "port": COMMON_PORT,
+                "protocol": "vless",
+                "settings": {
+                    "clients": [{"id": UUID}],
+                    "decryption": "none",
+                    "fallbacks": [
+                        {"dest": 3001},
+                        {"path": "/vless-argo", "dest": 3002},
+                        {"path": "/vmess-argo", "dest": 3003},
+                        {"path": "/trojan-argo", "dest": 3004}
+                    ]
+                },
+                "streamSettings": {"network": "tcp"}
+            }] + [
+                {
+                    "port": 3001,
+                    "listen": "127.0.0.1",
                     "protocol": "vless",
-                    "settings": {
-                        "clients": [{"id": UUID}],
-                        "decryption": "none",
-                        "fallbacks": [
-                            {"dest": 3001},
-                            {"path": "/vless-argo", "dest": 3002},
-                            {"path": "/vmess-argo", "dest": 3003},
-                            {"path": "/trojan-argo", "dest": 3004}
-                        ]
-                    },
-                    "streamSettings": {"network": "tcp"}
-                }] + [
-                    {
-                        "port": 3001,
-                        "listen": "127.0.0.1",
-                        "protocol": "vless",
-                        "settings": {"clients": [{"id": UUID}]},
-                        "streamSettings": {"network": "ws"}
-                    },
-                    {
-                        "port": 3002,
-                        "listen": "127.0.0.1",
-                        "protocol": "vless",
-                        "streamSettings": {"network": "ws", "wsSettings": {"path": "/vless-argo"}}
-                    },
-                    {
-                        "port": 3003,
-                        "listen": "127.0.0.1",
-                        "protocol": "vmess",
-                        "settings": {"clients": [{"id": UUID, "alterId": 0}]},
-                        "streamSettings": {"network": "ws", "wsSettings": {"path": "/vmess-argo"}}
-                    },
-                    {
-                        "port": 3004,
-                        "listen": "127.0.0.1",
-                        "protocol": "trojan",
-                        "settings": {"clients": [{"password": UUID}]},
-                        "streamSettings": {"network": "ws", "wsSettings": {"path": "/trojan-argo"}}
-                    }
-                ],
-                "outbounds": [{"protocol": "freedom"}, {"protocol": "blackhole"}]
-            }
-            with open(config_path, 'w') as f:
-                json.dump(config_data, f)
-            
-            # 启动核心服务
-            subprocess.Popen(["/root/.tmp/web", "-c", config_path])
-            
-            # 启动Argo隧道
-            domain_for_links = ""
-            argo_log = f"/root/.tmp/argo_{self.app_name}.log"
-            if self.argo_domain and self.argo_auth:
-                domain_for_links = self.argo_domain
-                if re.match(r'^[A-Za-z0-9=]+$', self.argo_auth):
-                    argo_cmd = f"tunnel --edge-ip-version auto --no-autoupdate run --token {self.argo_auth}"
-                else:
-                    tunnel_yml = f"/root/.tmp/tunnel_{self.app_name}.yml"
-                    tunnel_json = f"/root/.tmp/tunnel_{self.app_name}.json"
-                    with open(tunnel_json, 'w') as f:
-                        f.write(self.argo_auth)
-                    tunnel_id = json.loads(self.argo_auth)['TunnelID']
-                    with open(tunnel_yml, 'w') as f:
-                        f.write(f"tunnel: {tunnel_id}\n")
-                        f.write(f"credentials-file: {tunnel_json}\n")
-                        f.write("ingress:\n  - hostname: {}\n    service: http://localhost:{}".format(self.argo_domain, COMMON_PORT))
-                    argo_cmd = f"tunnel --config {tunnel_yml} run"
-                subprocess.Popen(f"/root/.tmp/bot {argo_cmd} > {argo_log} 2>&1", shell=True)
-                print(f"✅ {self.app_name} 固定隧道启动 (域名: {self.argo_domain})")
+                    "settings": {"clients": [{"id": UUID}]},
+                    "streamSettings": {"network": "ws"}
+                },
+                {
+                    "port": 3002,
+                    "listen": "127.0.0.1",
+                    "protocol": "vless",
+                    "streamSettings": {"network": "ws", "wsSettings": {"path": "/vless-argo"}}
+                },
+                {
+                    "port": 3003,
+                    "listen": "127.0.0.1",
+                    "protocol": "vmess",
+                    "settings": {"clients": [{"id": UUID, "alterId": 0}]},
+                    "streamSettings": {"network": "ws", "wsSettings": {"path": "/vmess-argo"}}
+                },
+                {
+                    "port": 3004,
+                    "listen": "127.0.0.1",
+                    "protocol": "trojan",
+                    "settings": {"clients": [{"password": UUID}]},
+                    "streamSettings": {"network": "ws", "wsSettings": {"path": "/trojan-argo"}}
+                }
+            ],
+            "outbounds": [{"protocol": "freedom"}, {"protocol": "blackhole"}]
+        }
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+        
+        # 启动核心服务
+        subprocess.Popen(["/root/.tmp/web", "-c", config_path])
+        
+        # 启动Argo隧道
+        domain_for_links = ""
+        argo_domain = os.environ.get(f"{prefix}_ARGO_DOMAIN") or ""
+        argo_auth = os.environ.get(f"{prefix}_ARGO_AUTH") or ""
+        argo_log = f"/root/.tmp/argo_{app_name}.log"
+        if argo_domain and argo_auth:
+            domain_for_links = argo_domain
+            if re.match(r'^[A-Za-z0-9=]+$', argo_auth):
+                argo_cmd = f"tunnel --edge-ip-version auto --no-autoupdate run --token {argo_auth}"
             else:
-                argo_cmd = f"tunnel --edge-ip-version auto --url http://localhost:{COMMON_PORT}"
-                subprocess.Popen(f"/root/.tmp/bot {argo_cmd} > {argo_log} 2>&1", shell=True)
-                time.sleep(10)
-                try:
-                    with open(argo_log, 'r') as f:
-                        match = re.search(r"https?://(\S+\.trycloudflare\.com)", f.read())
-                        if match:
-                            domain_for_links = match.group(1)
-                            print(f"✅ {self.app_name} 临时隧道启动 (域名: {domain_for_links})")
-                except:
-                    raise RuntimeError(f"{self.app_name} 隧道启动失败")
-            
-            # 生成订阅
-            links = generate_links(domain_for_links, self.app_name, UUID, CFIP, CFPORT)
-            self.sub_store["content"] = base64.b64encode(links.encode()).decode()
-            print(f"✅ {self.app_name} 订阅内容已生成")
+                tunnel_yml = f"/root/.tmp/tunnel_{app_name}.yml"
+                tunnel_json = f"/root/.tmp/tunnel_{app_name}.json"
+                with open(tunnel_json, 'w') as f:
+                    f.write(argo_auth)
+                tunnel_id = json.loads(argo_auth)['TunnelID']
+                with open(tunnel_yml, 'w') as f:
+                    f.write(f"tunnel: {tunnel_id}\n")
+                    f.write(f"credentials-file: {tunnel_json}\n")
+                    f.write("ingress:\n  - hostname: {}\n    service: http://localhost:{}".format(argo_domain, COMMON_PORT))
+                argo_cmd = f"tunnel --config {tunnel_yml} run"
+            subprocess.Popen(f"/root/.tmp/bot {argo_cmd} > {argo_log} 2>&1", shell=True)
+            print(f"✅ {app_name} 固定隧道启动 (域名: {argo_domain})")
+        else:
+            argo_cmd = f"tunnel --edge-ip-version auto --url http://localhost:{COMMON_PORT}"
+            subprocess.Popen(f"/root/.tmp/bot {argo_cmd} > {argo_log} 2>&1", shell=True)
+            time.sleep(10)
+            try:
+                with open(argo_log, 'r') as f:
+                    match = re.search(r"https?://(\S+\.trycloudflare\.com)", f.read())
+                    if match:
+                        domain_for_links = match.group(1)
+                        print(f"✅ {app_name} 临时隧道启动 (域名: {domain_for_links})")
+            except:
+                raise RuntimeError(f"{app_name} 隧道启动失败")
+        
+        # 生成订阅
+        links = generate_links(domain_for_links, app_name, UUID, CFIP, CFPORT)
+        stores[app_name]["content"] = base64.b64encode(links.encode()).decode()
+        print(f"✅ {app_name} 订阅内容已生成")
 
-            # 完整订阅URL
-            full_sub_url = ""
-            if MODAL_USER_NAME:
-                base_url = f"https://{MODAL_USER_NAME}--{self.app_name}-web_server.modal.run"
-                full_sub_url = f"{base_url}/{SUB_PATH}"
-                print(f"✅ {self.app_name} 完整订阅地址: {full_sub_url}")
-            else:
-                print(f"⚠️ 未设置 MODAL_USER_NAME，无法生成完整订阅URL")
-            
-            print("\n" + "="*60)
-            print(f"✅ {self.app_name} 服务就绪 (地区: {self.region})")
-            if full_sub_url:
-                print(f"  - 订阅地址: {full_sub_url}")
-            print(f"  - 隧道域名: {domain_for_links}")
-            print("="*60 + "\n")
-            
-            yield
-            # 停止清理
-            subprocess.run(f"pkill -f 'web -c {config_path}' || true", shell=True)
-            subprocess.run(f"pkill -f 'bot .*--url http://localhost:{COMMON_PORT}' || true", shell=True)
+        # 完整订阅URL
+        full_sub_url = ""
+        if MODAL_USER_NAME:
+            base_url = f"https://{MODAL_USER_NAME}--{app_name}-web_server.modal.run"
+            full_sub_url = f"{base_url}/{SUB_PATH}"
+            print(f"✅ {app_name} 完整订阅地址: {full_sub_url}")
+        else:
+            print(f"⚠️ 未设置 MODAL_USER_NAME，无法生成完整订阅URL")
+        
+        print("\n" + "="*60)
+        print(f"✅ {app_name} 服务就绪 (地区: {region})")
+        if full_sub_url:
+            print(f"  - 订阅地址: {full_sub_url}")
+        print(f"  - 隧道域名: {domain_for_links}")
+        print("="*60 + "\n")
+        
+        yield
+        # 停止清理
+        subprocess.run(f"pkill -f 'web -c {config_path}' || true", shell=True)
+        subprocess.run(f"pkill -f 'bot .*--url http://localhost:{COMMON_PORT}' || true", shell=True)
 
-        # 全局FastAPI应用（绑定到实例）
-        app = FastAPI(lifespan=lifespan)
+    # 全局FastAPI应用
+    app = FastAPI(lifespan=lifespan)
 
-        @app.get("/")
-        def root():
-            return Response(
-                content=f"{self.app_name} 运行中 (地区: {self.region}, 端口: {COMMON_PORT})",
-                media_type="text/plain"
-            )
-
-        @app.get(f"/{SUB_PATH}")
-        def get_subscription():
-            content = self.sub_store.get("content")
-            return Response(
-                content=content or "订阅未生成",
-                media_type="text/plain",
-                status_code=200 if content else 503
-            )
-        return app
-
-    # 全局暴露服务（关键：在类方法中定义，避免函数嵌套）
-    def expose_web_server(self):
-        @self.app.function(
-            timeout=86400,
-            min_containers=1,  # 替换 keep_warm=1（Modal 1.0+ 兼容）
-            region=self.region,
-            cpu=0.125,
-            memory=128
+    @app.get("/")
+    def root():
+        region = os.environ.get(f"{prefix}_REGION") or next(
+            cfg["default_region"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == prefix
         )
-        @modal.asgi_app()
-        def web_server():
-            return self.fastapi_app
-        return web_server
+        return Response(
+            content=f"{app_name} 运行中 (地区: {region}, 端口: {COMMON_PORT})",
+            media_type="text/plain"
+        )
+
+    @app.get(f"/{SUB_PATH}")
+    def get_subscription():
+        content = stores[app_name].get("content")
+        return Response(
+            content=content or "订阅未生成",
+            media_type="text/plain",
+            status_code=200 if content else 503
+        )
+    return app
 
 # --------------------------
-# 初始化实例（全局作用域）
+# 全局暴露每个实例的服务（关键）
 # --------------------------
-instances = [Instance(cfg) for cfg in INSTANCE_CONFIGS]
-# 暴露每个实例的web服务（必须在全局调用，确保函数被Modal识别）
-for instance in instances:
-    instance.expose_web_server()
+for cfg in INSTANCE_CONFIGS:
+    prefix = cfg["prefix"]
+    app_name = os.environ.get(f"{prefix}_APP_NAME") or f"{NAME_PREFIX}-{prefix.lower()}"
+    region = os.environ.get(f"{prefix}_REGION") or cfg["default_region"]
+    
+    # 为每个实例定义全局web_server函数（无嵌套）
+    @apps[app_name].function(
+        timeout=86400,
+        min_containers=1,  # 替换keep_warm
+        region=region,
+        cpu=0.125,
+        memory=128
+    )
+    @modal.asgi_app()
+    def web_server():
+        # 通过闭包获取当前实例的app_name和prefix
+        return get_fastapi_app(app_name, prefix)
 
-# 绑定实例变量（可选，用于单独部署）
-to_app, ysl_app, ny_app = instances
+# --------------------------
+# 实例变量（用于部署）
+# --------------------------
+to_app = apps[next(cfg for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "TO")["prefix"]]
+ysl_app = apps[next(cfg for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "YSL")["prefix"]]
+ny_app = apps[next(cfg for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "NY")["prefix"]]
