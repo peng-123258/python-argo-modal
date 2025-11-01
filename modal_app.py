@@ -247,7 +247,6 @@ for cfg in INSTANCE_CONFIGS:
 
 # --------------------------
 # 实例变量（用于部署）
-# --------------------------
-to_app = apps[next(cfg for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "TO")["prefix"]]
-ysl_app = apps[next(cfg for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "YSL")["prefix"]]
-ny_app = apps[next(cfg for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "NY")["prefix"]]
+to_app = apps[next(cfg["prefix"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "TO")]
+ysl_app = apps[next(cfg["prefix"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "YSL")]
+ny_app = apps[next(cfg["prefix"] for cfg in INSTANCE_CONFIGS if cfg["prefix"] == "NY")]
