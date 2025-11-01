@@ -10,9 +10,9 @@ jobs:
       matrix:
         # 3个独立的Python文件，对应不同实例
         app_file:
-          - "app_to.py"  # 实例1
-          - "app_ysl.py" # 实例2
-          - "app_ny.py"  # 实例3
+          - "to_app.py"  # 实例1
+          - "ysl_app.py" # 实例2
+          - "ny_app.py"  # 实例3
 
     steps:
       - name: Checkout code
