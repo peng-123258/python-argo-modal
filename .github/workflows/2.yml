@@ -1,30 +1,18 @@
-name: multi-region-proxy-deploy
+name: Deploy 3 Independent Apps
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * *'  # 每日凌晨更新部署
 
 jobs:
-  deploy-multi-instance:
+  deploy:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 与代码 INSTANCE_CONFIGS 完全对齐
-        instance:
-          - { prefix: "TO", default_region: "asia-northeast3" }
-          - { prefix: "YSL", default_region: "me-west1" }
-          - { prefix: "NY", default_region: "sa-east-1" }
-
-    env:
-      # 全局共享配置（对应代码全局变量）
-      MODAL_USER_NAME: ${{ secrets.MODAL_USER_NAME }}
-      COMMON_UUID: ${{ secrets.COMMON_UUID || 'be16536e-5c3c-44bc-8cb7-b7d0ddc3d951' }}
-      COMMON_CFIP: ${{ secrets.COMMON_CFIP || 'www.visa.com.tw' }}
-      COMMON_CFPORT: ${{ secrets.COMMON_CFPORT || 443 }}
-      SUB_PATH: ${{ secrets.SUB_PATH || 'sub' }}
-      # 实例专属前缀（用于环境变量注入）
-      INSTANCE_PREFIX: ${{ matrix.instance.prefix }}
+        # 3个独立的Python文件，对应不同实例
+        app_file:
+          - "app_to.py"  # 实例1
+          - "app_ysl.py" # 实例2
+          - "app_ny.py"  # 实例3
 
     steps:
       - name: Checkout code
@@ -36,40 +24,21 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install modal fastapi requests
+        run: pip install modal
 
       - name: Authenticate Modal
-        run: |
-          modal token set --token-id ${{ secrets.MODAL_TOKEN_ID }} --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal token set --token-id ${{ secrets.MODAL_TOKEN_ID }} --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
 
-      - name: Prepare instance secrets
+      - name: Deploy ${{ matrix.app_file }}
         run: |
-          # 创建实例专属 Secret（名称包含前缀，避免冲突）
-          modal secret delete "${INSTANCE_PREFIX}-secrets" --yes || true
-          modal secret create "${INSTANCE_PREFIX}-secrets" \
-            COMMON_UUID="${COMMON_UUID}" \
-            COMMON_CFIP="${COMMON_CFIP}" \
-            COMMON_CFPORT="${COMMON_CFPORT}" \
-            "${INSTANCE_PREFIX}_ARGO_DOMAIN"="${{ secrets[format('{0}_ARGO_DOMAIN', matrix.instance.prefix)] || '' }}" \
-            "${INSTANCE_PREFIX}_ARGO_AUTH"="${{ secrets[format('{0}_ARGO_AUTH', matrix.instance.prefix)] || '' }}" \
-            "${INSTANCE_PREFIX}_REGION"="${{ matrix.instance.default_region }}"
+          # 为每个文件设置独立名称（从文件名提取）
+          APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
+          echo "部署应用: $APP_NAME"
+          # 部署对应Python文件
+          modal deploy ${{ matrix.app_file }}
 
-      - name: Deploy instance to Modal
+      - name: Output URL for ${{ matrix.app_file }}
         run: |
-          # 注入实例专属环境变量（与代码中 os.environ.get 对应）
-          export "${INSTANCE_PREFIX}_APP_NAME"="proxy-node-${INSTANCE_PREFIX,,}"  # 小写前缀，如 TO → proxy-node-to
-          export "${INSTANCE_PREFIX}_REGION"="${{ matrix.instance.default_region }}"
-          export MODAL_USER_NAME="${MODAL_USER_NAME}"
-          export SUB_PATH="${SUB_PATH}"
-          
-          # 部署（应用名由代码内部定义，无需--name参数）
-          modal deploy modal_app.py  # 假设代码文件名为 modal_app.py
-
-      - name: Output deployment info
-        run: |
-          APP_NAME="proxy-node-${INSTANCE_PREFIX,,}"
-          echo "✅ 实例部署完成: ${APP_NAME}"
-          echo "地区: ${{ matrix.instance.default_region }}"
-          echo "订阅地址: https://${MODAL_USER_NAME}--${APP_NAME}-web_server.modal.run/${SUB_PATH}"
+          APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
+          echo "✅ $APP_NAME 部署完成"
+          echo "访问地址: https://${{ secrets.MODAL_USER_NAME }}--${APP_NAME}-web.modal.run"
