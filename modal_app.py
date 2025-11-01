@@ -16,11 +16,11 @@ INSTANCE_CONFIGS = [
     },
     {
         "prefix": "YSL",
-        "default_region": "me me-west1"  # 默认新加坡
+        "default_region": "me-west1"  # 默认新加坡
     },
     {
         "prefix": "NY",
-        "default_region": "sa sa-east-1"  # 默认纽约
+        "default_region": "sa-east-1"  # 默认纽约
     }
 ]
 
