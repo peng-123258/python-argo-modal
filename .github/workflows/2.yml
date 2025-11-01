@@ -1,0 +1,54 @@
+name: Deploy 3 Independent Apps
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app_file:
+          - "to_app.py"
+          - "ysl_app.py"
+          - "ny_app.py"
+      fail-fast: false  # 一个实例失败不影响其他
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'  # 缓存依赖加速安装
+
+      - name: Install dependencies
+        run: pip install modal
+        timeout-minutes: 5
+
+      - name: Authenticate Modal
+        run: |
+          modal token set --token-id ${{ secrets.MODAL_TOKEN_ID }} --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+          modal profile current || exit 1  # 验证认证
+        timeout-minutes: 3
+
+      - name: Stop existing app (clean deploy)
+        run: |
+          APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
+          modal app stop $APP_NAME || echo "No existing app $APP_NAME to stop"
+        timeout-minutes: 5
+
+      - name: Deploy ${{ matrix.app_file }}
+        run: |
+          APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
+          echo "部署应用: $APP_NAME"
+          modal deploy --detach ${{ matrix.app_file }}
+          modal app wait $APP_NAME --timeout 300  # 等待部署完成
+        timeout-minutes: 10
+
+      - name: Output deployment result
+        run: |
+          APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
+          echo "✅ $APP_NAME 部署完成"
