@@ -36,9 +36,9 @@ def generate_links(domain, name, uuid, cfip, cfport):
         isp = f"ny_{meta_info[25]}-{meta_info[17]}".replace(' ', '_').strip()  # 带NY前缀
     except Exception:
         isp = "Ny-Modal-FastAPI"
-    vmess_config = {"v": "2", "ps": f"{name}-{isp}", "add": cfip, "port": cfport, "id": uuid, "aid": "0", "scy": "none", "net": "ws", "type": "none", "host": domain, "path": "/vmess-ny?ed=2560", "tls": "tls", "sni": domain, "alpn": "", "fp": "chrome"}
+    vmess_config = {"v": "2", "ps": f"{name}-{isp}", "add": cfip, "port": cfport, "id": uuid, "aid": "0", "scy": "none", "net": "ws", "type": "none", "host": domain, "path": "/vmess-argo?ed=2560", "tls": "tls", "sni": domain, "alpn": "", "fp": "chrome"}
     vmess_b64 = base64.b64encode(json.dumps(vmess_config).encode('utf-8')).decode('utf-8')
-    return f"""vless://{uuid}@{cfip}:{cfport}?encryption=none&security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Fvless-ny%3Fed%3D2560#{name}-{isp}\n\nvmess://{vmess_b64}\n\ntrojan://{uuid}@{cfip}:{cfport}?security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Ftrojan-ny%3Fed%3D2560#{name}-{isp}""".strip()
+    return f"""vless://{uuid}@{cfip}:{cfport}?encryption=none&security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Fvless-argo%3Fed%3D2560#{name}-{isp}\n\nvmess://{vmess_b64}\n\ntrojan://{uuid}@{cfip}:{cfport}?security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Ftrojan-argo%3Fed%3D2560#{name}-{isp}""".strip()
 
 # --- 5. FastAPI 的生命周期管理器（NY实例配置） ---
 @asynccontextmanager
@@ -50,7 +50,7 @@ async def lifespan(app_instance: FastAPI):
     UUID = os.environ.get('NY_UUID') or '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9'
     NY_ARGO_DOMAIN = os.environ.get('NY_ARGO_DOMAIN') or ''  # NY专属Argo域名
     NY_ARGO_AUTH = os.environ.get('NY_ARGO_AUTH') or ''      # NY专属Argo认证
-    ARGO_PORT = int(os.environ.get('NY_ARGO_PORT') or '8005')  # 端口与其他实例区分
+    ARGO_PORT = int(os.environ.get('NY_ARGO_PORT') or '8001')  # 端口与其他实例区分
     NAME = os.environ.get('NY_NAME') or 'NyModal'
     CFIP = os.environ.get('NY_CFIP') or 'ny.visa.com.tw'  # NY专属域名
     CFPORT = int(os.environ.get('NY_CFPORT') or '443')
@@ -72,16 +72,16 @@ async def lifespan(app_instance: FastAPI):
                         "clients": [{"id": UUID}],
                         "decryption": "none",
                         "fallbacks": [
-                            {"dest": 3041},  # 端口带NY标识
-                            {"path": "/vless-ny", "dest": 3042},
-                            {"path": "/vmess-ny", "dest": 3043},
-                            {"path": "/trojan-ny", "dest": 3044},
+                            {"dest": 3001},
+                            {"path": "/vless-argo", "dest": 3002},
+                            {"path": "/vmess-argo", "dest": 3003},
+                            {"path": "/trojan-argo", "dest": 3004},
                         ]
                     },
                     "streamSettings": {"network": "tcp"}
                 },
                 {
-                    "port": 3041,
+                    "port": 3001,
                     "listen": "127.0.0.1",
                     "protocol": "vless",
                     "settings": {
@@ -94,7 +94,7 @@ async def lifespan(app_instance: FastAPI):
                     }
                 },
                 {
-                    "port": 3042,
+                    "port": 3002,
                     "listen": "127.0.0.1",
                     "protocol": "vless",
                     "settings": {
@@ -104,11 +104,11 @@ async def lifespan(app_instance: FastAPI):
                     "streamSettings": {
                         "network": "ws",
                         "security": "none",
-                        "wsSettings": {"path": "/vless-ny"}
+                        "wsSettings": {"path": "/vless-argo"}
                     }
                 },
                 {
-                    "port": 3043,
+                    "port": 3003,
                     "listen": "127.0.0.1",
                     "protocol": "vmess",
                     "settings": {
@@ -116,11 +116,11 @@ async def lifespan(app_instance: FastAPI):
                     },
                     "streamSettings": {
                         "network": "ws",
-                        "wsSettings": {"path": "/vmess-ny"}
+                        "wsSettings": {"path": "/vmess-argo"}
                     }
                 },
                 {
-                    "port": 3044,
+                    "port": 3004,
                     "listen": "127.0.0.1",
                     "protocol": "trojan",
                     "settings": {
@@ -129,7 +129,7 @@ async def lifespan(app_instance: FastAPI):
                     "streamSettings": {
                         "network": "ws",
                         "security": "none",
-                        "wsSettings": {"path": "/trojan-ny"}
+                        "wsSettings": {"path": "/trojan-argo"}
                     }
                 }
             ],
