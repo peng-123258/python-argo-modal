@@ -22,8 +22,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # 移除 cache: 'pip'，避免查找依赖文件
-          # cache: 'pip'
 
       - name: Install dependencies
         run: pip install modal
@@ -45,11 +43,20 @@ jobs:
         run: |
           APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
           echo "部署应用: $APP_NAME"
-          modal deploy --detach ${{ matrix.app_file }}
+          # 移除--detach（Modal deploy默认异步，无需该参数）
+          modal deploy ${{ matrix.app_file }}
+          # 等待部署完成（超时时间300秒）
           modal app wait $APP_NAME --timeout 300
         timeout-minutes: 10
 
       - name: Output deployment result
         run: |
           APP_NAME=$(echo ${{ matrix.app_file }} | sed 's/.py//')
-          echo "✅ $APP_NAME 部署完成"
+          # 检查应用状态
+          STATUS=$(modal app status $APP_NAME | grep -oP 'Status: \K\w+')
+          if [ "$STATUS" = "running" ]; then
+            echo "✅ $APP_NAME 部署完成，当前状态：$STATUS"
+          else
+            echo "❌ $APP_NAME 部署失败，当前状态：$STATUS"
+            exit 1
+          fi
