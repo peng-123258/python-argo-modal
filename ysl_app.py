@@ -48,7 +48,7 @@ async def lifespan(app_instance: FastAPI):
     print("▶️ YSL实例 - Lifespan startup: 正在启动后台服务...")
     
     # 核心修改：所有配置变量与Secret对应
-    UUID = os.environ.get('YSL_UUID') or 'ysl-be16536e-5c3c-44bc-8cb7-b7d0ddc3d951'
+    UUID = os.environ.get('YSL_UUID') or '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9'
     YSL_ARGO_DOMAIN = os.environ.get('YSL_ARGO_DOMAIN') or ''  # YSL专属Argo域名
     YSL_ARGO_AUTH = os.environ.get('YSL_ARGO_AUTH') or ''      # YSL专属Argo认证
     ARGO_PORT = int(os.environ.get('YSL_ARGO_PORT') or '8003')  # 端口与其他实例区分
