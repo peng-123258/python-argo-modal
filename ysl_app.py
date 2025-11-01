@@ -25,8 +25,7 @@ image = modal.Image.debian_slim().pip_install("fastapi", "uvicorn", "requests").
 
 # --- 3. 定义 Modal App 和共享资源（YSL实例专属） ---
 app = modal.App(MODAL_APP_NAME, image=image)
-# 修正：Secret名称需与实际创建的一致，假设为"ysl-secrets"（全大写+下划线更规范）
-app_secrets = modal.Secret.from_name("YSL-SECRETS")
+app_secrets = modal.Secret.from_name("modal-secrets-ysl")  # YSL专属密钥
 subscription_dict = modal.Dict.from_name("modal-dict-data-ysl", create_if_missing=True)  # 独立存储
 
 # --- 4. 辅助函数（带YSL标识） ---
@@ -37,9 +36,9 @@ def generate_links(domain, name, uuid, cfip, cfport):
         isp = f"ysl_{meta_info[25]}-{meta_info[17]}".replace(' ', '_').strip()  # 带YSL前缀
     except Exception:
         isp = "Ysl-Modal-FastAPI"
-    vmess_config = {"v": "2", "ps": f"{name}-{isp}", "add": cfip, "port": cfport, "id": uuid, "aid": "0", "scy": "none", "net": "ws", "type": "none", "host": domain, "path": "/vmess-ysl?ed=2560", "tls": "tls", "sni": domain, "alpn": "", "fp": "chrome"}
+    vmess_config = {"v": "2", "ps": f"{name}-{isp}", "add": cfip, "port": cfport, "id": uuid, "aid": "0", "scy": "none", "net": "ws", "type": "none", "host": domain, "path": "/vmess-argo?ed=2560", "tls": "tls", "sni": domain, "alpn": "", "fp": "chrome"}
     vmess_b64 = base64.b64encode(json.dumps(vmess_config).encode('utf-8')).decode('utf-8')
-    return f"""vless://{uuid}@{cfip}:{cfport}?encryption=none&security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Fvless-ysl%3Fed%3D2560#{name}-{isp}\n\nvmess://{vmess_b64}\n\ntrojan://{uuid}@{cfip}:{cfport}?security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Ftrojan-ysl%3Fed%3D2560#{name}-{isp}""".strip()
+    return f"""vless://{uuid}@{cfip}:{cfport}?encryption=none&security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Fvless-argo%3Fed%3D2560#{name}-{isp}\n\nvmess://{vmess_b64}\n\ntrojan://{uuid}@{cfip}:{cfport}?security=tls&sni={domain}&fp=chrome&type=ws&host={domain}&path=%2Ftrojan-argo%3Fed%3D2560#{name}-{isp}""".strip()
 
 # --- 5. FastAPI 的生命周期管理器（YSL实例配置） ---
 @asynccontextmanager
@@ -47,11 +46,11 @@ async def lifespan(app_instance: FastAPI):
     # --- 应用启动时 ---
     print("▶️ YSL实例 - Lifespan startup: 正在启动后台服务...")
     
-    # 核心修改：所有配置变量与Secret对应
+    # 核心修改：所有TO替换为YSL
     UUID = os.environ.get('YSL_UUID') or '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9'
     YSL_ARGO_DOMAIN = os.environ.get('YSL_ARGO_DOMAIN') or ''  # YSL专属Argo域名
     YSL_ARGO_AUTH = os.environ.get('YSL_ARGO_AUTH') or ''      # YSL专属Argo认证
-    ARGO_PORT = int(os.environ.get('YSL_ARGO_PORT') or '8003')  # 端口与其他实例区分
+    ARGO_PORT = int(os.environ.get('YSL_ARGO_PORT') or '8001')  # 端口与其他实例区分
     NAME = os.environ.get('YSL_NAME') or 'YslModal'
     CFIP = os.environ.get('YSL_CFIP') or 'ysl.visa.com.tw'  # YSL专属域名
     CFPORT = int(os.environ.get('YSL_CFPORT') or '443')
@@ -73,16 +72,16 @@ async def lifespan(app_instance: FastAPI):
                         "clients": [{"id": UUID}],
                         "decryption": "none",
                         "fallbacks": [
-                            {"dest": 3021},  # 端口带YSL标识
-                            {"path": "/vless-ysl", "dest": 3022},
-                            {"path": "/vmess-ysl", "dest": 3023},
-                            {"path": "/trojan-ysl", "dest": 3024},
+                            {"dest": 3001},
+                            {"path": "/vless-argo", "dest": 3002},
+                            {"path": "/vmess-argo", "dest": 3003},
+                            {"path": "/trojan-argo", "dest": 3004},
                         ]
                     },
                     "streamSettings": {"network": "tcp"}
                 },
                 {
-                    "port": 3021,
+                    "port": 3001,
                     "listen": "127.0.0.1",
                     "protocol": "vless",
                     "settings": {
@@ -95,7 +94,7 @@ async def lifespan(app_instance: FastAPI):
                     }
                 },
                 {
-                    "port": 3022,
+                    "port": 3002,
                     "listen": "127.0.0.1",
                     "protocol": "vless",
                     "settings": {
@@ -105,11 +104,11 @@ async def lifespan(app_instance: FastAPI):
                     "streamSettings": {
                         "network": "ws",
                         "security": "none",
-                        "wsSettings": {"path": "/vless-ysl"}
+                        "wsSettings": {"path": "/vless-argo"}
                     }
                 },
                 {
-                    "port": 3023,
+                    "port": 3003,
                     "listen": "127.0.0.1",
                     "protocol": "vmess",
                     "settings": {
@@ -117,11 +116,11 @@ async def lifespan(app_instance: FastAPI):
                     },
                     "streamSettings": {
                         "network": "ws",
-                        "wsSettings": {"path": "/vmess-ysl"}
+                        "wsSettings": {"path": "/vmess-argo"}
                     }
                 },
                 {
-                    "port": 3024,
+                    "port": 3004,
                     "listen": "127.0.0.1",
                     "protocol": "trojan",
                     "settings": {
@@ -130,7 +129,7 @@ async def lifespan(app_instance: FastAPI):
                     "streamSettings": {
                         "network": "ws",
                         "security": "none",
-                        "wsSettings": {"path": "/trojan-ysl"}
+                        "wsSettings": {"path": "/trojan-argo"}
                     }
                 }
             ],
@@ -211,8 +210,7 @@ fastapi_app = FastAPI(lifespan=lifespan)
 @app.function(
     secrets=[app_secrets],
     timeout=86400,
-    # 修正：Modal 1.0+ 中 keep_warm 已更名为 min_containers
-    min_containers=1,
+    keep_warm=1,
     region=DEPLOY_REGION,
     cpu=0.125,
     memory=128
