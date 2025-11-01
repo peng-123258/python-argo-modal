@@ -47,7 +47,7 @@ async def lifespan(app_instance: FastAPI):
     print("▶️ NY实例 - Lifespan startup: 正在启动后台服务...")
     
     # 核心修改：所有标识替换为NY
-    UUID = os.environ.get('NY_UUID') or 'ny-be16536e-5c3c-44bc-8cb7-b7d0ddc3d951'
+    UUID = os.environ.get('NY_UUID') or '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9'
     NY_ARGO_DOMAIN = os.environ.get('NY_ARGO_DOMAIN') or ''  # NY专属Argo域名
     NY_ARGO_AUTH = os.environ.get('NY_ARGO_AUTH') or ''      # NY专属Argo认证
     ARGO_PORT = int(os.environ.get('NY_ARGO_PORT') or '8005')  # 端口与其他实例区分
