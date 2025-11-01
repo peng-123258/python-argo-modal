@@ -47,7 +47,7 @@ async def lifespan(app_instance: FastAPI):
     print("▶️ To实例 - Lifespan startup: 正在启动后台服务...")
     
     # 核心修改：将所有KO_ARGO替换为TO_ARGO
-    UUID = os.environ.get('TO_UUID') or 'to-be16536e-5c3c-44bc-8cb7-b7d0ddc3d951'
+    UUID = os.environ.get('TO_UUID') or '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9'
     TO_ARGO_DOMAIN = os.environ.get('TO_ARGO_DOMAIN') or ''  # 原KO_ARGO_DOMAIN
     TO_ARGO_AUTH = os.environ.get('TO_ARGO_AUTH') or ''      # 原KO_ARGO_AUTH
     ARGO_PORT = int(os.environ.get('TO_ARGO_PORT') or '8002')
