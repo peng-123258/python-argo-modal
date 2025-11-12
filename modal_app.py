@@ -68,7 +68,7 @@ async def lifespan(app_instance: FastAPI):
     # --- 应用启动时 ---
     print("▶️ Lifespan startup: 正在启动后台服务...")
     
-    UUID = os.environ.get('UUID') or 'be16536e-5c3c-44bc-8cb7-b7d0ddc3d951'
+    UUID = os.environ.get('UUID') or '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9'
     ARGO_DOMAIN = os.environ.get('ARGO_DOMAIN') or ''
     ARGO_AUTH = os.environ.get('ARGO_AUTH') or ''
     ARGO_PORT = int(os.environ.get('ARGO_PORT') or '8001')
@@ -297,6 +297,7 @@ def web_server():
             return Response(content=f"读取订阅时发生错误: {e}", status_code=500, media_type="text/plain; charset=utf-8")
     
     return fastapi_app
+
 
 
 
