@@ -53,7 +53,7 @@ jobs:
           modal secret delete modal-secrets --yes || true
           
           modal secret create modal-secrets \
-          UUID='${{ secrets.UUID || 'be16536e-5c3c-44bc-8cb7-b7d0ddc3d951' }}' \
+          UUID='${{ secrets.UUID || '55e8ca56-8a0a-4486-b3f9-b9b0d46638a9' }}' \
           MODAL_USER_NAME='${{ secrets.MODAL_USER_NAME }}' \
           ARGO_DOMAIN='${{ secrets.ARGO_DOMAIN }}' \
           ARGO_AUTH='${{ secrets.ARGO_AUTH }}' \
