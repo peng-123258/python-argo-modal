@@ -1,0 +1,44 @@
+name: 定时停止 Modal 3
+
+on:
+  workflow_dispatch:  # 保留手动触发
+  schedule:
+    - cron: '0 18 1 * *'  # 原定时规则，每月1-3日18:00 UTC执行
+
+jobs:
+  stop-apps:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Modal
+        run: pip install modal  # 仅需安装modal工具
+
+      - name: Authenticate Modal
+        run: |
+          modal token set --token-id ${{ secrets.MODAL_TOKEN_ID }} --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      # 停止 to-app
+      - name: Stop to-app
+        run: |
+          echo "停止 to-app..."
+          modal app stop to-app || true  # 忽略停止失败（如应用未运行）
+
+      # 停止 ysl-app
+      - name: Stop ysl-app
+        run: |
+          echo "停止 ysl-app..."
+          modal app stop ysl-app || true
+
+      # 停止 ny-app
+      - name: Stop ny-app
+        run: |
+          echo "停止 ny-app..."
+          modal app stop ny-app || true
+
+      - name: 输出结果
+        run: echo "✅ 所有应用停止操作已执行"
